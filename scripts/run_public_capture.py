@@ -85,7 +85,7 @@ def build_command(args, source: str) -> list[str]:
 
 
 def main():
-    load_workspace_env()
+    load_workspace_env()  # Must load before any env-dependent checks
     parser = argparse.ArgumentParser(
         description='Unified entrypoint for public-post-to-obsidian executors.'
     )

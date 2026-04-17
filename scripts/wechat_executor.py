@@ -13,11 +13,11 @@ from datetime import datetime
 from pathlib import Path
 
 from common import (
-    TARGET_DIRS,
     build_result,
     note_path_for,
     output_settings_for_source,
     render_note_content,
+    target_dir_for_source,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -220,7 +220,7 @@ def localize_images(
 def main():
     parser = argparse.ArgumentParser(description='Extract a WeChat article into Obsidian format.')
     parser.add_argument('url')
-    parser.add_argument('--dest-dir', default=TARGET_DIRS['wechat'])
+    parser.add_argument('--dest-dir', default=target_dir_for_source('wechat', interactive=False))
     parser.add_argument('--date', default=datetime.now().strftime('%Y%m%d'))
     args = parser.parse_args()
 

@@ -9,10 +9,10 @@ from datetime import datetime
 from pathlib import Path
 
 from common import (
-    TARGET_DIRS,
     build_result,
     markdown_to_text,
     output_settings_for_source,
+    target_dir_for_source,
     yaml_quote,
 )
 
@@ -135,7 +135,7 @@ def main():
     parser.add_argument('--container-id')
     parser.add_argument('--title')
     parser.add_argument('--cookie-header')
-    parser.add_argument('--dest-dir', default=TARGET_DIRS['feishu'])
+    parser.add_argument('--dest-dir', default=target_dir_for_source('feishu', interactive=False))
     parser.add_argument('--date', default=datetime.now().strftime('%Y%m%d'))
     parser.add_argument('--write-meta', action='store_true')
     args = parser.parse_args()

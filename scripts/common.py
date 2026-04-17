@@ -12,12 +12,14 @@ CONFIG_PATH = Path.home() / '.public-post-to-obsidian.json'
 APP_FOLDER_NAME = 'Public Post To Obsidian'
 DEFAULT_STORAGE_MODE = 'downloads'
 DEFAULT_FILE_FORMAT = 'md'
+DEFAULT_OBSIDIAN_INBOX = Path.home() / 'Library' / 'Mobile Documents' / 'iCloud~md~obsidian' / 'Documents' / 'ZYR' / '00-Inbox'
+DEFAULT_LECTURE_ARCHIVE_ROOT = Path.home() / 'Library' / 'CloudStorage' / 'OneDrive-个人' / '讲座录制'
 
 SOURCE_SUBDIRS = {
     'x': 'X',
-    'wechat': '微信公众号',
+    'wechat': '微信剪藏',
     'feishu': '飞书',
-    'web': '网页',
+    'web': '网页剪藏',
     'tencent_meeting': '腾讯会议回放',
 }
 
@@ -40,10 +42,12 @@ def default_downloads_app_root() -> Path:
 
 def build_target_dirs(base_root: str | Path) -> dict[str, str]:
     root = Path(base_root).expanduser()
-    return {
+    target_dirs = {
         source_type: str(root / subdir)
         for source_type, subdir in SOURCE_SUBDIRS.items()
     }
+    target_dirs['tencent_meeting'] = str(DEFAULT_LECTURE_ARCHIVE_ROOT)
+    return target_dirs
 
 
 TARGET_DIRS = build_target_dirs(default_downloads_app_root())
@@ -143,6 +147,12 @@ def ensure_user_config(interactive: bool = True) -> dict:
     config = load_user_config()
     if config:
         return config
+    if DEFAULT_OBSIDIAN_INBOX.exists():
+        return {
+            'storage_mode': 'obsidian',
+            'obsidian_inbox': str(DEFAULT_OBSIDIAN_INBOX),
+            'file_format': DEFAULT_FILE_FORMAT,
+        }
     if interactive and is_interactive():
         config = onboarding_config()
         save_user_config(config)

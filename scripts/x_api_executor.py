@@ -12,7 +12,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from common import TARGET_DIRS, build_result, load_workspace_env, obsidian_frontmatter
+from common import build_result, load_workspace_env, obsidian_frontmatter, target_dir_for_source
 from translation_utils import detect_language, is_simplified_chinese, prompt_translation_choice, translate_markdown
 from x_opencli_executor import sanitize_title
 
@@ -496,7 +496,7 @@ def main():
             sys.exit(1)
         translation_choice = sys.argv[3]
 
-    target_dir = TARGET_DIRS['x']
+    target_dir = target_dir_for_source('x', interactive=False)
     os.makedirs(target_dir, exist_ok=True)
 
     bearer_token = get_bearer_token()

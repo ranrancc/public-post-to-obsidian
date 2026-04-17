@@ -10,7 +10,7 @@ import urllib.request
 from datetime import datetime
 from urllib.parse import urlparse
 
-from common import TARGET_DIRS, build_result, obsidian_frontmatter
+from common import build_result, obsidian_frontmatter, target_dir_for_source
 from translation_utils import detect_language, is_simplified_chinese, prompt_translation_choice, translate_markdown
 
 
@@ -193,7 +193,7 @@ def main():
             sys.exit(1)
         translation_choice = sys.argv[3]
     fetch_url = x_jina_url(source_url)
-    target_dir = TARGET_DIRS['x']
+    target_dir = target_dir_for_source('x', interactive=False)
     os.makedirs(target_dir, exist_ok=True)
 
     try:
