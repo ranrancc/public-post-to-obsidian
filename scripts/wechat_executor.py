@@ -220,7 +220,7 @@ def localize_images(
 def main():
     parser = argparse.ArgumentParser(description='Extract a WeChat article into Obsidian format.')
     parser.add_argument('url')
-    parser.add_argument('--dest-dir', default=target_dir_for_source('wechat', interactive=False))
+    parser.add_argument('--dest-dir', default=target_dir_for_source('wechat'))
     parser.add_argument('--date', default=datetime.now().strftime('%Y%m%d'))
     args = parser.parse_args()
 

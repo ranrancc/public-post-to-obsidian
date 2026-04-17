@@ -496,7 +496,7 @@ def main():
             sys.exit(1)
         translation_choice = sys.argv[3]
 
-    target_dir = target_dir_for_source('x', interactive=False)
+    target_dir = target_dir_for_source('x')
     os.makedirs(target_dir, exist_ok=True)
 
     bearer_token = get_bearer_token()

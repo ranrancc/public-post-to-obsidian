@@ -135,7 +135,7 @@ def main():
     parser.add_argument('--container-id')
     parser.add_argument('--title')
     parser.add_argument('--cookie-header')
-    parser.add_argument('--dest-dir', default=target_dir_for_source('feishu', interactive=False))
+    parser.add_argument('--dest-dir', default=target_dir_for_source('feishu'))
     parser.add_argument('--date', default=datetime.now().strftime('%Y%m%d'))
     parser.add_argument('--write-meta', action='store_true')
     args = parser.parse_args()
