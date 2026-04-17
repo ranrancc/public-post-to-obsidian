@@ -8,7 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-CONFIG_PATH = Path.home() / '.public-post-to-obsidian.json'
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+CONFIG_PATH = SKILL_ROOT / '.public-post-to-obsidian.json'
+LEGACY_CONFIG_PATH = Path.home() / '.public-post-to-obsidian.json'
 APP_FOLDER_NAME = 'Public Post To Obsidian'
 DEFAULT_STORAGE_MODE = 'downloads'
 DEFAULT_FILE_FORMAT = 'md'
@@ -72,10 +74,11 @@ def load_workspace_env() -> None:
 
 
 def load_user_config() -> dict:
-    if not CONFIG_PATH.exists():
+    config_path = CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
+    if not config_path.exists():
         return {}
     try:
-        payload = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
+        payload = json.loads(config_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
