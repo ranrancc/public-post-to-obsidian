@@ -1,0 +1,4 @@
+interface:
+  display_name: "Public Post To Obsidian"
+  short_description: "统一抓取公开内容并写入 Obsidian Inbox"
+  default_prompt: "Use $public-post-to-obsidian to capture a public X, WeChat, Feishu, or web URL into my Obsidian inbox."
