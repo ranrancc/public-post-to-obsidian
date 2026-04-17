@@ -7,6 +7,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from common import (
     build_result,
@@ -220,7 +221,6 @@ def main():
         'feishu',
         'public-post-feishu',
         args.dest_dir,
-        note_path=metadata.get('note_path') or payload.get('note_path'),
         asset_dir=payload.get('asset_dir'),
         meta_path=payload.get('meta_path'),
         title=title,
