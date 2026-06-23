@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from common import build_result, obsidian_frontmatter, target_dir_for_source
+from common import atomic_replace_directory, atomic_write_text, build_result, load_workspace_env, obsidian_frontmatter, target_dir_for_source
 from translation_utils import detect_language, is_simplified_chinese, prompt_translation_choice, translate_markdown
 
 
@@ -19,6 +19,8 @@ def sanitize_title(text: str) -> str:
     text = re.sub(r'https?://\S+', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     text = re.sub(r'[\\/:*?"<>|]', '', text)
+    text = text.replace('“', '「').replace('”', '」')
+    text = text.replace('‘', '『').replace('’', '』')
     text = re.sub(r'\s+', ' ', text).strip()
     return (text[:80] or 'X-article').strip()
 
@@ -84,16 +86,16 @@ def localize_opencli_media(source_url: str, note_basename: str, target_dir: str)
         if not media_files:
             return [], None
         asset_dir = Path(target_dir) / 'assets' / note_basename
-        if asset_dir.exists():
-            shutil.rmtree(asset_dir)
-        asset_dir.mkdir(parents=True, exist_ok=True)
+        asset_dir.parent.mkdir(parents=True, exist_ok=True)
+        staging_dir = Path(tempfile.mkdtemp(prefix=f'.{note_basename}.staging-', dir=asset_dir.parent))
         links: list[str] = []
         for i, src in enumerate(media_files, start=1):
             ext = src.suffix.lower() or '.jpg'
             name = f"file-{datetime.now().strftime('%Y%m%d%H%M%S')}{i:03d}{ext}"
-            dst = asset_dir / name
+            dst = staging_dir / name
             shutil.copy2(src, dst)
             links.append(f'![[assets/{note_basename}/{name}]]')
+        atomic_replace_directory(staging_dir, asset_dir)
         return links, str(asset_dir)
 
 
@@ -184,6 +186,7 @@ def embed_media_with_llm(markdown: str, media_links: list[str], source_url: str)
 
 
 def main():
+    load_workspace_env()
     if len(sys.argv) not in (2, 4):
         print(json.dumps({'status': 'error', 'error': 'usage: x_opencli_executor.py <url> [--translation-choice ask|translate|original|both]'}, ensure_ascii=False))
         sys.exit(1)
@@ -252,12 +255,11 @@ def main():
             },
         )
         md = f"{frontmatter}{base_markdown}"
-        with open(note_path, 'w', encoding='utf-8') as f:
-            f.write(md)
+        atomic_write_text(note_path, md)
 
         translated_note_path = None
         if not is_simplified_chinese(detected_lang) and translation_choice in {'translate', 'both'}:
-            translated = translate_markdown(base_markdown, model_label='kimi 2.5')
+            translated = translate_markdown(base_markdown)
             zh_title = sanitize_title(translated['translated_title'] or f'中文译文 {title}')
             zh_basename = f"{date_str}--{zh_title}"
             translated_note_path = os.path.join(target_dir, f'{zh_basename}.md')
@@ -277,8 +279,7 @@ def main():
                 },
             )
             translated_md = f"{translated_frontmatter}{translated['translated_markdown'].rstrip()}\n"
-            with open(translated_note_path, 'w', encoding='utf-8') as f:
-                f.write(translated_md)
+            atomic_write_text(translated_note_path, translated_md)
             if translation_choice == 'translate' and os.path.exists(note_path):
                 os.remove(note_path)
 
@@ -301,6 +302,8 @@ def main():
         result = build_result('x', 'x-opencli-article', target_dir, status='error', error=str(e))
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get('status') in {'error', 'auth_required'}:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -21,8 +21,10 @@
 
 统一入口下载视频示例：
 
+> 以下命令需在 skill 根目录（`public-post-to-obsidian/`）下执行。
+
 ```bash
-python3 /Users/zhangyiran/.openclaw/workspace/skills/public-post-to-obsidian/scripts/run_public_capture.py \
+python3 scripts/run_public_capture.py \
   --tencent-meeting-download-video \
   'https://meeting.tencent.com/crm/NA1pgaAR20'
 ```

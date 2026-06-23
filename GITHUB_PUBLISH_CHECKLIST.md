@@ -15,26 +15,9 @@
 
 当前发现的问题：
 
-- `scripts/common.py`
-- `scripts/feishu_executor.py`
-- `SKILL.md`
-- `references/*.md`
-
-这些文件里仍包含类似 `/Users/zhangyiran/...` 的路径。
-
-建议改法：
-
-- 所有脚本入口都改成相对路径推导
-- 所有输出目录改成可配置项
-- 文档示例改成仓库相对路径或通用命令
-
-目标状态：
-
-```bash
-python3 scripts/run_public_capture.py "<URL>"
-```
-
-而不是依赖你本机的完整目录。
+- 所有脚本入口已改成相对路径推导（`Path(__file__)`）
+- 文档示例已改成仓库相对路径
+- 输出目录通过环境变量或 `.env` 配置，无硬编码用户目录
 
 ### 2. 把 Obsidian / OneDrive 路径配置化
 
@@ -55,7 +38,9 @@ python3 scripts/run_public_capture.py "<URL>"
 推荐变量名：
 
 ```env
-PUBLIC_POST_OBSIDIAN_VAULT_ROOT=
+PUBLIC_POST_OUTPUT_ROOT=
+PUBLIC_POST_CONFIG_FILE=
+PUBLIC_POST_OBSIDIAN_INBOX=
 PUBLIC_POST_LECTURE_ARCHIVE_ROOT=
 ```
 
