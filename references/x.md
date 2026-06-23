@@ -2,17 +2,19 @@
 
 ## 执行顺序
 
-X 抓取不是单一路径，而是三段回退：
+X 抓取不是单一路径，而是四段回退：
 
 1. `scripts/x_api_executor.py`
-2. `scripts/x_opencli_executor.py`
-3. `scripts/x_executor.py`
+2. `scripts/x_fxtwitter_executor.py`
+3. `scripts/x_opencli_executor.py`
+4. `scripts/x_executor.py`
 
 默认原则：
 
 - 优先走 API
-- API 不可用时走 opencli 浏览器链路
-- 都不适用时才退到轻量链路
+- API 不可用时先走公开 FxTwitter 链路
+- 再尝试 opencli 登录态浏览器，最后退到 Jina 轻量链路
+- 统一入口同时检查执行器退出码和 JSON `status`，不会把“退出码 0 的错误 JSON”误判为成功
 
 ## 各链路说明
 
@@ -44,6 +46,19 @@ X 抓取不是单一路径，而是三段回退：
 限制：
 
 - 需要可用 token
+
+### `x_fxtwitter_executor.py`
+
+适用：
+
+- `/<username>/status/<id>` 形式的公开帖子和 X Article
+- 没有 X API token，或 API 临时认证/限流失败时
+
+特点：
+
+- 直接重建 `article.content.blocks + entityMap`
+- 不需要浏览器登录态
+- 属于第三方公开服务，响应结构或可用性可能变化，因此始终保留后续回退
 
 ### `x_opencli_executor.py`
 
@@ -99,6 +114,7 @@ X Article 当前会保留：
 
 - `capture_method: x-api-v2`
 - `render_method: x-api-v2+fxtwitter-blocks` 或 `x-api-v2`
+- FxTwitter 独立成功时：`capture_method: fxtwitter-public-api`
 
 判断原则：
 
@@ -107,6 +123,6 @@ X Article 当前会保留：
 
 ## 分发给别人时要说明
 
-- 没有 `X_BEARER_TOKEN` 时，不能承诺 API 链路可用
+- 没有 `X_BEARER_TOKEN` 时会跳过官方 API，不会阻断后续公开回退
 - 没有 `opencli`、Browser Bridge 和 X 登录态时，也不能承诺浏览器链路可用
-- 如果要做纯公开分发版，应把预期降到 `x_executor.py` 轻量链路
+- 纯公开分发版仍可使用 FxTwitter → Jina，但应说明 FxTwitter 是非官方依赖

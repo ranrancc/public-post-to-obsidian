@@ -3,7 +3,7 @@ import json
 import sys
 from urllib.parse import urlparse
 
-from common import build_result, target_dir_for_source
+from common import build_result, load_workspace_env, target_dir_for_source
 
 
 def detect_source(url: str) -> str:
@@ -33,6 +33,7 @@ def x_jina_url(url: str) -> str:
 
 
 def main():
+    load_workspace_env()
     if len(sys.argv) != 2:
         print(json.dumps({'status': 'error', 'error': 'usage: router.py <url>'}, ensure_ascii=False))
         sys.exit(1)
@@ -47,7 +48,7 @@ def main():
             'x_api_executor.py' if use_opencli else 'x_executor.py',
             target_dir_for_source('x', interactive=False),
             fetch_url=x_jina_url(url),
-            notes='Prefer x_api_executor.py for X long-form/status URLs when X_BEARER_TOKEN is available; fall back to opencli twitter article, then r.jina.ai for legacy cases.',
+            notes='Use the runtime chain: official X API when a token is available, then FxTwitter for public status URLs, OpenCLI browser state, and finally r.jina.ai.',
         )
     elif source == 'wechat':
         result = build_result(

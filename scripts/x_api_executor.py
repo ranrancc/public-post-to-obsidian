@@ -6,13 +6,15 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 
-from common import build_result, load_workspace_env, obsidian_frontmatter, target_dir_for_source
+from common import atomic_replace_directory, atomic_write_text, build_result, load_workspace_env, obsidian_frontmatter, target_dir_for_source
 from translation_utils import detect_language, is_simplified_chinese, prompt_translation_choice, translate_markdown
 from x_opencli_executor import sanitize_title
 
@@ -60,7 +62,14 @@ def fetch_tweet(tweet_id: str, bearer_token: str) -> dict:
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode('utf-8'))
-        except Exception as exc:
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in {429, 500, 502, 503, 504} or attempt >= 3:
+                break
+            retry_after = exc.headers.get('Retry-After') if exc.headers else None
+            delay = float(retry_after) if retry_after and retry_after.isdigit() else 1.5 * (attempt + 1)
+            time.sleep(min(delay, 30))
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_error = exc
             if attempt < 3:
                 time.sleep(1.5 * (attempt + 1))
@@ -78,7 +87,14 @@ def fetch_fxtwitter_tweet(username: str, tweet_id: str) -> dict:
             if data.get('code') != 200:
                 raise ValueError(data.get('message') or f'FxTwitter returned code {data.get("code")}')
             return data
-        except Exception as exc:
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in {429, 500, 502, 503, 504} or attempt >= 2:
+                break
+            retry_after = exc.headers.get('Retry-After') if exc.headers else None
+            delay = float(retry_after) if retry_after and retry_after.isdigit() else 1.0 * (attempt + 1)
+            time.sleep(min(delay, 30))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             if attempt < 2:
                 time.sleep(1.0 * (attempt + 1))
@@ -208,16 +224,15 @@ def localize_media(media_urls: list[str], note_basename: str, target_dir: str) -
     if not media_urls:
         return [], None, 0, 0
     asset_dir = Path(target_dir) / 'assets' / note_basename
-    if asset_dir.exists():
-        shutil.rmtree(asset_dir)
-    asset_dir.mkdir(parents=True, exist_ok=True)
+    asset_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(tempfile.mkdtemp(prefix=f'.{note_basename}.staging-', dir=asset_dir.parent))
 
     links: list[str] = []
     ok = 0
     fail = 0
     for i, src in enumerate(media_urls, start=1):
         file_name = f'file-{datetime.now().strftime("%Y%m%d%H%M%S")}{i:03d}.{infer_ext(src)}'
-        dst = asset_dir / file_name
+        dst = staging_dir / file_name
         if download(src, str(dst)):
             links.append(f'![[assets/{note_basename}/{file_name}]]')
             ok += 1
@@ -226,8 +241,9 @@ def localize_media(media_urls: list[str], note_basename: str, target_dir: str) -
         time.sleep(0.03)
 
     if ok == 0:
-        shutil.rmtree(asset_dir)
+        shutil.rmtree(staging_dir)
         return [], None, 0, fail
+    atomic_replace_directory(staging_dir, asset_dir)
     return links, str(asset_dir), ok, fail
 
 
@@ -242,16 +258,15 @@ def localize_media_map(media_urls: list[str], note_basename: str, target_dir: st
         return {}, None, 0, 0
 
     asset_dir = Path(target_dir) / 'assets' / note_basename
-    if asset_dir.exists():
-        shutil.rmtree(asset_dir)
-    asset_dir.mkdir(parents=True, exist_ok=True)
+    asset_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(tempfile.mkdtemp(prefix=f'.{note_basename}.staging-', dir=asset_dir.parent))
 
     mapping: dict[str, str] = {}
     ok = 0
     fail = 0
     for i, src in enumerate(ordered_unique, start=1):
         file_name = f'file-{datetime.now().strftime("%Y%m%d%H%M%S")}{i:03d}.{infer_ext(src)}'
-        dst = asset_dir / file_name
+        dst = staging_dir / file_name
         if download(src, str(dst)):
             mapping[src] = f'![[assets/{note_basename}/{file_name}]]'
             ok += 1
@@ -260,8 +275,9 @@ def localize_media_map(media_urls: list[str], note_basename: str, target_dir: st
         time.sleep(0.03)
 
     if ok == 0:
-        shutil.rmtree(asset_dir)
+        shutil.rmtree(staging_dir)
         return {}, None, 0, fail
+    atomic_replace_directory(staging_dir, asset_dir)
     return mapping, str(asset_dir), ok, fail
 
 
@@ -530,13 +546,15 @@ def main():
         capture_method = 'x-api-v2'
 
         fx_payload = None
+        fx_enrichment_error = None
         _, parsed_username = None, None
         parsed_username, _ = parse_status_url(source_url)
         if parsed_username:
             try:
                 fx_payload = fetch_fxtwitter_tweet(parsed_username, tweet_id)
-            except Exception:
+            except Exception as exc:
                 fx_payload = None
+                fx_enrichment_error = str(exc)
 
         media_links: list[str] = []
         media_link_map: dict[str, str] = {}
@@ -608,12 +626,11 @@ def main():
                 'x_tweet_id': data.get('id'),
             },
         )
-        with open(note_path, 'w', encoding='utf-8') as f:
-            f.write(f'{frontmatter}{base_markdown}')
+        atomic_write_text(note_path, f'{frontmatter}{base_markdown}')
 
         translated_note_path = None
         if not is_simplified_chinese(detected_lang) and translation_choice in {'translate', 'both'}:
-            translated = translate_markdown(base_markdown, model_label='kimi 2.5')
+            translated = translate_markdown(base_markdown)
             zh_title = sanitize_title(translated['translated_title'] or f'中文译文 {title}')
             zh_basename = f'{date_str}--{zh_title}'
             translated_note_path = os.path.join(target_dir, f'{zh_basename}.md')
@@ -634,8 +651,7 @@ def main():
                     'x_tweet_id': data.get('id'),
                 },
             )
-            with open(translated_note_path, 'w', encoding='utf-8') as f:
-                f.write(f"{translated_frontmatter}{translated['translated_markdown'].rstrip()}\n")
+            atomic_write_text(translated_note_path, f"{translated_frontmatter}{translated['translated_markdown'].rstrip()}\n")
             if translation_choice == 'translate' and os.path.exists(note_path):
                 os.remove(note_path)
 
@@ -651,11 +667,14 @@ def main():
             author_handle=author_handle,
             images_ok=images_ok,
             images_fail=images_fail,
+            warnings=[f'FxTwitter enrichment failed: {fx_enrichment_error}'] if fx_enrichment_error else [],
         )
     except Exception as e:
         result = build_result('x', 'x-api-v2', target_dir, status='error', error=str(e))
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get('status') in {'error', 'auth_required'}:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -17,8 +17,10 @@
 
 统一入口补参数示例：
 
+> 以下命令需在 skill 根目录（`public-post-to-obsidian/`）下执行。
+
 ```bash
-python3 /Users/zhangyiran/.openclaw/workspace/skills/public-post-to-obsidian/scripts/run_public_capture.py \
+python3 scripts/run_public_capture.py \
   --page-id '...' \
   --space-id '...' \
   --container-id '...' \
@@ -54,13 +56,12 @@ python3 /Users/zhangyiran/.openclaw/workspace/skills/public-post-to-obsidian/scr
 - `feishu_probe.py` 只找 `wiki/v2/tree/get_node`
 - docx 页面不发这个请求，所以探针可能直接失败
 
-临时绕过：
+统一入口：
 
 ```bash
-python3 ~/.openclaw/workspace/tools/feishu_docx_grab.py \
-  "$COOKIE" \
-  "https://my.feishu.cn/docx/TOKEN" \
-  "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/ZYR/00-Inbox/网页剪藏/"
+python3 scripts/run_public_capture.py \
+  --cookie-header "$COOKIE" \
+  "https://my.feishu.cn/docx/TOKEN"
 ```
 
 关键机制：

@@ -5,12 +5,13 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 import urllib.request
 from datetime import datetime
 from urllib.parse import urlparse
 
-from common import build_result, obsidian_frontmatter, target_dir_for_source
+from common import atomic_replace_directory, atomic_write_text, build_result, load_workspace_env, obsidian_frontmatter, target_dir_for_source
 from translation_utils import detect_language, is_simplified_chinese, prompt_translation_choice, translate_markdown
 
 
@@ -32,6 +33,8 @@ def sanitize_title(text: str) -> str:
     text = re.sub(r'\s*/\s*X\s*$', '', text, flags=re.IGNORECASE)
     text = re.sub(r'^\s*["“](.*)["”]\s*$', r'\1', text)
     text = re.sub(r'[\\/:*?"<>|]', '', text)
+    text = text.replace('“', '「').replace('”', '」')
+    text = text.replace('‘', '『').replace('’', '』')
     text = re.sub(r'\s+', ' ', text).strip()
     return (text[:60] or 'X-post').strip()
 
@@ -114,9 +117,9 @@ def download(url: str, path: str) -> bool:
 
 def localize_images(body: str, note_basename: str, target_dir: str) -> tuple[str, str | None, int, int]:
     asset_dir = os.path.join(target_dir, 'assets', note_basename)
-    if os.path.isdir(asset_dir):
-        shutil.rmtree(asset_dir)
-    os.makedirs(asset_dir, exist_ok=True)
+    asset_parent = os.path.dirname(asset_dir)
+    os.makedirs(asset_parent, exist_ok=True)
+    staging_dir = tempfile.mkdtemp(prefix=f'.{note_basename}.staging-', dir=asset_parent)
 
     # 匹配 [![alt](image_url)](link_url) 格式
     image_pattern = re.compile(r'\[!\[(?P<alt>[^\]]*)\]\((?P<src>https://pbs\.twimg\.com/[^\)]+)\)\]\((?P<link>https://x\.com/[^\)]+)\)')
@@ -140,7 +143,7 @@ def localize_images(body: str, note_basename: str, target_dir: str) -> tuple[str
         ext = infer_ext(src)
         stamp = datetime.now().strftime('%Y%m%d%H%M%S') + f'{image_index:03d}'
         file_name = f'file-{stamp}.{ext}'
-        local_path = os.path.join(asset_dir, file_name)
+        local_path = os.path.join(staging_dir, file_name)
         if download(src, local_path):
             rel = f'assets/{note_basename}/{file_name}'
             replacement = f'![[{rel}]]'
@@ -163,7 +166,7 @@ def localize_images(body: str, note_basename: str, target_dir: str) -> tuple[str
         ext = infer_ext(src)
         stamp = datetime.now().strftime('%Y%m%d%H%M%S') + f'{image_index:03d}'
         file_name = f'file-{stamp}.{ext}'
-        local_path = os.path.join(asset_dir, file_name)
+        local_path = os.path.join(staging_dir, file_name)
         if download(src, local_path):
             rel = f'assets/{note_basename}/{file_name}'
             replacement = f'![[{rel}]]'
@@ -174,13 +177,15 @@ def localize_images(body: str, note_basename: str, target_dir: str) -> tuple[str
         time.sleep(0.03)
 
 
-    if ok == 0 and fail == 0:
-        shutil.rmtree(asset_dir)
-        return body, None, 0, 0
+    if ok == 0:
+        shutil.rmtree(staging_dir)
+        return body, None, 0, fail
+    atomic_replace_directory(staging_dir, asset_dir)
     return body, asset_dir, ok, fail
 
 
 def main():
+    load_workspace_env()
     if len(sys.argv) not in (2, 4):
         print(json.dumps({'status': 'error', 'error': 'usage: x_executor.py <url> [--translation-choice ask|translate|original|both]'}, ensure_ascii=False))
         sys.exit(1)
@@ -227,11 +232,10 @@ def main():
             f"{frontmatter}"
             f"{base_markdown}"
         )
-        with open(note_path, 'w', encoding='utf-8') as f:
-            f.write(md)
+        atomic_write_text(note_path, md)
         translated_note_path = None
         if not is_simplified_chinese(detected_lang) and translation_choice in {'translate', 'both'}:
-            translated = translate_markdown(base_markdown, model_label='kimi 2.5')
+            translated = translate_markdown(base_markdown)
             zh_title = sanitize_title(translated['translated_title'] or f'中文译文 {title}')
             zh_basename = f"{date_str}--{zh_title}__x"
             translated_note_path = os.path.join(target_dir, f'{zh_basename}.md')
@@ -250,8 +254,7 @@ def main():
                 },
             )
             translated_md = f"{translated_frontmatter}{translated['translated_markdown'].rstrip()}\n"
-            with open(translated_note_path, 'w', encoding='utf-8') as f:
-                f.write(translated_md)
+            atomic_write_text(translated_note_path, translated_md)
             if translation_choice == 'translate' and os.path.exists(note_path):
                 os.remove(note_path)
         result = build_result(
@@ -271,6 +274,8 @@ def main():
         result = build_result('x', 'x-jina-http', target_dir, status='error', error=str(e), fetch_url=fetch_url)
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get('status') in {'error', 'auth_required'}:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

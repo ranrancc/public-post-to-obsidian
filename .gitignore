@@ -4,3 +4,4 @@ __pycache__/
 *.pyo
 *.pyd
 .public-post-to-obsidian.json
+.env

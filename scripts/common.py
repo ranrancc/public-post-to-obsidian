@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,8 +16,6 @@ LEGACY_CONFIG_PATH = Path.home() / '.public-post-to-obsidian.json'
 APP_FOLDER_NAME = 'Public Post To Obsidian'
 DEFAULT_STORAGE_MODE = 'downloads'
 DEFAULT_FILE_FORMAT = 'md'
-DEFAULT_OBSIDIAN_INBOX = Path.home() / 'Library' / 'Mobile Documents' / 'iCloud~md~obsidian' / 'Documents' / 'ZYR' / '00-Inbox'
-DEFAULT_LECTURE_ARCHIVE_ROOT = Path.home() / 'Library' / 'CloudStorage' / 'OneDrive-个人' / '讲座录制'
 
 SOURCE_SUBDIRS = {
     'x': 'X',
@@ -42,24 +42,74 @@ def default_downloads_app_root() -> Path:
     return default_downloads_root() / APP_FOLDER_NAME
 
 
+def configured_obsidian_inbox() -> Path | None:
+    value = (os.environ.get('PUBLIC_POST_OBSIDIAN_INBOX') or '').strip()
+    return Path(value).expanduser() if value else None
+
+
 def build_target_dirs(base_root: str | Path) -> dict[str, str]:
     root = Path(base_root).expanduser()
     target_dirs = {
         source_type: str(root / subdir)
         for source_type, subdir in SOURCE_SUBDIRS.items()
     }
-    target_dirs['tencent_meeting'] = str(DEFAULT_LECTURE_ARCHIVE_ROOT)
+    lecture_root = (os.environ.get('PUBLIC_POST_LECTURE_ARCHIVE_ROOT') or '').strip()
+    if lecture_root:
+        target_dirs['tencent_meeting'] = str(Path(lecture_root).expanduser())
     return target_dirs
 
 
 TARGET_DIRS = build_target_dirs(default_downloads_app_root())
 
 
-def load_workspace_env() -> None:
-    env_path = Path(__file__).resolve().parents[3] / '.env'
-    if not env_path.exists():
-        return
-    for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+def env_file_candidates() -> list[Path]:
+    """Return portable env locations in precedence order.
+
+    Existing process variables always win.  PUBLIC_POST_ENV_FILE is the
+    cross-agent escape hatch; the remaining paths cover a self-contained
+    checkout plus common agent homes without requiring any of them.
+    """
+    script_path = Path(__file__).resolve()
+    agent_root = script_path.parents[3]
+    explicit = (os.environ.get('PUBLIC_POST_ENV_FILE') or '').strip()
+    candidates = [
+        Path(explicit).expanduser() if explicit else None,
+        agent_root / '.env',
+        SKILL_ROOT / '.env',
+        Path.home() / '.config' / 'public-post-to-obsidian' / '.env',
+        Path.home() / '.hermes' / '.env',
+        Path.home() / '.openclaw' / 'workspace' / '.env',
+        Path.home() / '.openclaw' / '.env',
+        Path.home() / '.codex' / '.env',
+    ]
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        resolved = candidate.resolve(strict=False)
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+def load_workspace_env() -> list[str]:
+    loaded: list[str] = []
+    for env_path in env_file_candidates():
+        if not env_path.is_file():
+            continue
+        try:
+            raw_lines = env_path.read_text(encoding='utf-8').splitlines()
+        except OSError:
+            continue
+        loaded.append(str(env_path))
+        _load_env_lines(raw_lines)
+    return loaded
+
+
+def _load_env_lines(raw_lines: list[str]) -> None:
+    for raw_line in raw_lines:
         line = raw_line.strip()
         if not line or line.startswith('#') or '=' not in line:
             continue
@@ -74,7 +124,9 @@ def load_workspace_env() -> None:
 
 
 def load_user_config() -> dict:
-    config_path = CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
+    explicit = (os.environ.get('PUBLIC_POST_CONFIG_FILE') or '').strip()
+    explicit_path = Path(explicit).expanduser() if explicit else None
+    config_path = explicit_path if explicit_path and explicit_path.exists() else CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
     if not config_path.exists():
         return {}
     try:
@@ -85,10 +137,10 @@ def load_user_config() -> dict:
 
 
 def save_user_config(config: dict) -> None:
-    CONFIG_PATH.write_text(
-        json.dumps(config, ensure_ascii=False, indent=2) + '\n',
-        encoding='utf-8',
-    )
+    explicit = (os.environ.get('PUBLIC_POST_CONFIG_FILE') or '').strip()
+    config_path = Path(explicit).expanduser() if explicit else CONFIG_PATH
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(config_path, json.dumps(config, ensure_ascii=False, indent=2) + '\n')
 
 
 def is_interactive() -> bool:
@@ -150,10 +202,11 @@ def ensure_user_config(interactive: bool = True) -> dict:
     config = load_user_config()
     if config:
         return config
-    if DEFAULT_OBSIDIAN_INBOX.exists():
+    default_obsidian_inbox = configured_obsidian_inbox()
+    if default_obsidian_inbox is not None and default_obsidian_inbox.exists():
         return {
             'storage_mode': 'obsidian',
-            'obsidian_inbox': str(DEFAULT_OBSIDIAN_INBOX),
+            'obsidian_inbox': str(default_obsidian_inbox),
             'file_format': DEFAULT_FILE_FORMAT,
         }
     if interactive and is_interactive():
@@ -168,6 +221,9 @@ def ensure_user_config(interactive: bool = True) -> dict:
 
 
 def base_root_from_config(config: dict) -> Path:
+    output_override = (os.environ.get('PUBLIC_POST_OUTPUT_ROOT') or '').strip()
+    if output_override:
+        return Path(output_override).expanduser()
     mode = (config.get('storage_mode') or DEFAULT_STORAGE_MODE).strip().lower()
     if mode == 'obsidian':
         inbox = (config.get('obsidian_inbox') or '').strip()
@@ -209,6 +265,46 @@ def output_settings_for_source(source_type: str, *, interactive: bool = True) ->
 def note_path_for(target_dir: str, basename: str, file_format: str) -> str:
     ext = '.txt' if file_format == 'txt' else '.md'
     return str(Path(target_dir) / f'{basename}{ext}')
+
+
+def atomic_write_text(path: str | Path, content: str) -> None:
+    """Write a text file atomically so interrupted captures keep the old note."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f'.{destination.name}.', dir=destination.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_replace_directory(staging: str | Path, destination: str | Path) -> None:
+    """Swap a completed staging directory into place with rollback."""
+    staging_path = Path(staging)
+    destination_path = Path(destination)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path = Path(tempfile.mkdtemp(prefix=f'.{destination_path.name}.backup-', dir=destination_path.parent))
+    backup_path.rmdir()
+    had_destination = destination_path.exists()
+    try:
+        if had_destination:
+            os.replace(destination_path, backup_path)
+        os.replace(staging_path, destination_path)
+    except Exception:
+        if had_destination and backup_path.exists() and not destination_path.exists():
+            os.replace(backup_path, destination_path)
+        raise
+    finally:
+        if backup_path.exists():
+            shutil.rmtree(backup_path, ignore_errors=True)
 
 
 def count_assets(asset_dir: str | None) -> int:

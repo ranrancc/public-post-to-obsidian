@@ -11,7 +11,7 @@ This skill captures:
 
 For generic webpages, this skill now vendors its own copy of `baoyu-url-to-markdown` under:
 
-- [vendor/baoyu-url-to-markdown](/Users/zhangyiran/.openclaw/workspace/skills/public-post-to-obsidian/vendor/baoyu-url-to-markdown)
+- [vendor/baoyu-url-to-markdown](vendor/baoyu-url-to-markdown)
 
 That means the skill no longer depends on an external `baoyu-url-to-markdown` skill directory to run.
 
@@ -28,6 +28,33 @@ Optional but recommended:
 - `defuddle`
 - `OPENAI_API_KEY` for title cleanup fallback
 - `kimi` for translation flow in non-Chinese captures
+
+## Portable Environment Configuration
+
+Never commit a real `.env`. Copy `.env.example` to a private location and either export variables normally or point the skill at that file:
+
+```bash
+export PUBLIC_POST_ENV_FILE="$HOME/.config/public-post-to-obsidian/.env"
+python3 scripts/run_public_capture.py 'https://x.com/user/status/123'
+```
+
+Without an explicit path, the loader checks the current Agent root, the skill root, the shared config directory, and common Hermes/OpenClaw/Codex locations. Existing process variables have highest priority.
+
+For reproducible Agent or CI installs, output and user configuration can also be detached from the checkout:
+
+```bash
+export PUBLIC_POST_OUTPUT_ROOT="$HOME/Downloads/Public Post To Obsidian"
+export PUBLIC_POST_CONFIG_FILE="$HOME/.config/public-post-to-obsidian/config.json"
+```
+
+For X URLs, the portable fallback order is:
+
+1. official X API when a token is available
+2. FxTwitter public API for `/<username>/status/<id>` URLs
+3. OpenCLI with a logged-in browser bridge
+4. Jina Reader
+
+The final JSON includes `fallback_chain`, making missing credentials and unavailable optional dependencies diagnosable without exposing secrets.
 
 ## What Is Vendored
 
@@ -92,6 +119,7 @@ If you share this skill folder with others, keep these paths together:
 - `scripts/`
 - `agents/`
 - `vendor/baoyu-url-to-markdown/`
+- `.env.example`
 
 Do not remove the vendored `node_modules` unless you also want recipients to run dependency installation themselves.
 

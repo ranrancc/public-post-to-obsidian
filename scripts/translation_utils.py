@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json
+import os
 import re
-import subprocess
-
+import urllib.request
+import urllib.error
 
 SIMPLIFIED_HINTS = set('这来为们个国时后发说对开现过动还进点样应于与术体龙门书画气')
 TRADITIONAL_HINTS = set('這來為們個國時後發說對開現過動還進點樣應於與術體龍門書畫氣')
 CHINESE_RE = re.compile(r'[\u4e00-\u9fff]')
+
+
 def strip_frontmatter(text: str) -> str:
     if text.startswith('---\n'):
         parts = text.split('\n---\n', 1)
@@ -100,65 +103,149 @@ def split_text_for_translation(text: str, target_size: int = 6000, overlap: int 
     return [chunk for chunk in chunks if chunk.strip()]
 
 
-def run_kimi(prompt: str) -> str:
-    cp = subprocess.run(
-        ['kimi', '--print', '--final-message-only', '-p', prompt],
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=False,
-    )
-    if cp.returncode != 0:
-        raise RuntimeError(cp.stderr.strip() or cp.stdout.strip() or 'kimi translation failed')
-    return cp.stdout.strip()
+# ── Translation API ──────────────────────────────────────────────────
+
+PROVIDERS = {
+    'deepseek': {
+        'base_url': 'https://api.deepseek.com/v1',
+        'api_key_env': 'DEEPSEEK_API_KEY',
+    },
+    'openrouter': {
+        'base_url': 'https://openrouter.ai/api/v1',
+        'api_key_env': 'OPENROUTER_API_KEY',
+    },
+    'openai': {
+        'base_url': 'https://api.openai.com/v1',
+        'api_key_env': 'OPENAI_API_KEY',
+    },
+}
+
+DEFAULT_TRANSLATION_MODEL = 'deepseek:deepseek-v4-flash'
 
 
-def translate_chunk(text: str, *, model_label: str) -> str:
+def _parse_model(model_spec: str) -> tuple[str, str, str, str]:
+    """Parse 'provider:model' into (provider, model, base_url, api_key)."""
+    if ':' in model_spec:
+        provider, model = model_spec.split(':', 1)
+    else:
+        provider, model = 'deepseek', model_spec
+
+    cfg = PROVIDERS.get(provider)
+    if not cfg:
+        raise ValueError(
+            f'Unknown translation provider: {provider}. '
+            f'Supported: {", ".join(PROVIDERS)}'
+        )
+
+    api_key = os.environ.get(cfg['api_key_env'], '').strip()
+    if not api_key:
+        raise RuntimeError(
+            f'API key not found: env var {cfg["api_key_env"]} is not set. '
+            f'Set it or use a different provider via TRANSLATION_MODEL.'
+        )
+
+    return provider, model, cfg['base_url'], api_key
+
+
+def _api_chat(base_url: str, api_key: str, model: str, messages: list[dict]) -> str:
+    """Single call to OpenAI-compatible /v1/chat/completions."""
+    url = f'{base_url.rstrip("/")}/chat/completions'
+    body = json.dumps({
+        'model': model,
+        'messages': messages,
+        'temperature': 0.3,
+        'max_tokens': 4096,
+    }).encode('utf-8')
+
+    req = urllib.request.Request(url, data=body, method='POST')
+    req.add_header('Content-Type', 'application/json')
+    req.add_header('Authorization', f'Bearer {api_key}')
+
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        raise RuntimeError(f'Translation API error {e.code}: {body[:500]}')
+    except Exception as e:
+        raise RuntimeError(f'Translation API request failed: {e}')
+
+    choice = data.get('choices', [{}])[0]
+    content = choice.get('message', {}).get('content', '')
+    if not content:
+        raise RuntimeError(f'Empty response from translation API: {json.dumps(data)[:300]}')
+    return content
+
+
+def _resolve_model_label() -> str:
+    """Resolve translation model from env, with default fallback."""
+    return os.environ.get('TRANSLATION_MODEL', DEFAULT_TRANSLATION_MODEL).strip()
+
+
+def _translate_via_api(prompt: str, model_spec: str | None = None) -> str:
+    """Translate via OpenAI-compatible API. Raises RuntimeError on failure."""
+    spec = model_spec or _resolve_model_label()
+    provider, model, base_url, api_key = _parse_model(spec)
+    return _api_chat(base_url, api_key, model, [
+        {'role': 'user', 'content': prompt},
+    ])
+
+
+def translate_chunk(text: str, *, model_label: str | None = None) -> str:
     prompt = (
         '请将下面的内容完整翻译为自然、准确、通顺的简体中文。\n'
         '要求：\n'
         '1. 保留 Markdown 结构、标题层级、列表、链接和图片链接不变。\n'
         '2. 只翻译自然语言内容，不要解释，不要摘要，不要补充。\n'
         '3. 如果原文中有术语，优先使用自然的中文说法，必要时保留英文原词。\n'
-        f'4. 当前翻译通道：{model_label}。\n\n'
+        f'4. 当前翻译通道：{model_label or _resolve_model_label()}。\n\n'
         f'{text}'
     )
-    return run_kimi(prompt)
+    return _translate_via_api(prompt, model_label)
 
 
-def translate_title(title: str, *, model_label: str) -> str:
+def translate_title(title: str, *, model_label: str | None = None) -> str:
     prompt = (
         '请把下面这个标题翻译成自然、准确、可做文章标题的简体中文。\n'
         '只输出标题，不要加引号，不要解释。\n'
-        f'当前翻译通道：{model_label}\n\n{title}'
+        f'当前翻译通道：{model_label or _resolve_model_label()}\n\n{title}'
     )
-    return run_kimi(prompt).strip()
+    return _translate_via_api(prompt, model_label).strip()
 
 
-def translate_markdown(markdown: str, *, model_label: str = 'kimi 2.5') -> dict:
-    original_title, body = extract_title_and_body(markdown)
-    length_hint = estimate_length(body or markdown)
-    strategy = choose_translation_strategy(length_hint)
-    if strategy == 'single':
-        translated_body = translate_chunk(markdown, model_label=model_label)
-    else:
-        chunks = split_text_for_translation(markdown)
-        translated_parts = [
-            translate_chunk(chunk, model_label=model_label)
-            for chunk in chunks
-        ]
-        translated_body = '\n\n'.join(part.strip() for part in translated_parts if part.strip())
-    translated_title, _ = extract_title_and_body(translated_body)
-    if original_title and not translated_title:
-        translated_title = translate_title(original_title, model_label=model_label)
-        translated_body = replace_or_insert_title(translated_body, translated_title)
-    return {
-        'translated_markdown': translated_body,
-        'translated_title': translated_title,
-        'strategy': strategy,
-        'length_hint': length_hint,
-        'model': model_label,
-    }
+def translate_markdown(markdown: str, *, model_label: str | None = None) -> dict:
+    """Translate full markdown document. Returns dict with translated_markdown, etc."""
+    spec = model_label or _resolve_model_label()
+
+    try:
+        original_title, body = extract_title_and_body(markdown)
+        length_hint = estimate_length(body or markdown)
+        strategy = choose_translation_strategy(length_hint)
+
+        if strategy == 'single':
+            translated_body = translate_chunk(markdown, model_label=spec)
+        else:
+            chunks = split_text_for_translation(markdown)
+            translated_parts = [
+                translate_chunk(chunk, model_label=spec)
+                for chunk in chunks
+            ]
+            translated_body = '\n\n'.join(part.strip() for part in translated_parts if part.strip())
+
+        translated_title, _ = extract_title_and_body(translated_body)
+        if original_title and not translated_title:
+            translated_title = translate_title(original_title, model_label=spec)
+            translated_body = replace_or_insert_title(translated_body, translated_title)
+
+        return {
+            'translated_markdown': translated_body,
+            'translated_title': translated_title,
+            'strategy': strategy,
+            'length_hint': length_hint,
+            'model': spec,
+        }
+    except Exception as e:
+        raise RuntimeError(f'Translation failed ({spec}): {e}') from e
 
 
 def prompt_translation_choice(source_type: str, lang: str, title: str) -> str:
