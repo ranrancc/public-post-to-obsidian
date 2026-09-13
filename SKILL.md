@@ -64,6 +64,13 @@ python3 scripts/run_public_capture.py "<URL>"
 
 未显式指定时，会依次检查技能所在 Agent 根目录、技能目录、`~/.config/public-post-to-obsidian/.env`，以及常见 Hermes/OpenClaw/Codex 配置位置。已有变量不会被后续文件覆盖。仓库只提交 `.env.example`，不得提交真实密钥。
 
+### 翻译与兼容性
+
+- 翻译模型按 `--translation-model` → `TRANSLATION_MODEL` → 代码默认值选择，格式为 `provider:model`。支持的 provider 和对应密钥见 README。
+- API 返回 `finish_reason=length` 时，报告翻译截断错误；不得将其视为完整译文。当前不自动重新切分重试。
+- 微信及普通网页标题将弯引号转换为「」和『』。
+- 飞书执行器调用随仓库分发的 `scripts/grab_feishu_public_doc.cjs`，避免 ESM 环境中的 CommonJS 加载错误。
+
 ## 核心工作流（5步闭环）
 
 ```
@@ -90,7 +97,7 @@ python3 scripts/run_public_capture.py "<URL>"
 | 来源 | 执行器 | 优先级 | 备注 |
 |------|--------|--------|------|
 | X/Twitter | `x_api_executor.py` → `x_fxtwitter_executor.py` → `x_opencli_executor.py` → `x_executor.py` | 能力降级 | 每一步均检查 JSON status 与退出码 |
-| 微信公众号 | `wechat_executor.py` → 浏览器兜底（见 `references/wechat-browser-fallback.md`） | playwright优先 | 支持图片本地化；playwright缺失时降级为浏览器JS提取 |
+| 微信公众号 | `wechat_executor.py` → `wechat_extract.py` | Playwright | 支持图片本地化；需要 Python Playwright 和 Chromium |
 | 飞书/Lark | `feishu_executor.py` | 单一 | 需补充参数或浏览器态 |
 | 腾讯会议 | `tencent_meeting_executor.py` | 单一 | 默认逐字稿，可选视频 |
 | 普通网页 | `generic_web_executor.py` | 单一 | 带翻译策略 |
@@ -105,7 +112,7 @@ python3 scripts/run_public_capture.py "<URL>"
 | API 限流/失败 | X: 仅对 429/5xx/网络错误有限重试，再自动降级到 FxTwitter → OpenCLI → Jina；401/403 不盲目重试 |
 | 内容为空/截断 | 标记 `status=partial`，提示用户检查 |
 | 需要登录态 | 标记 `status=auth_required`，转人工处理 |
-| 微信公众号 playwright 缺失 | `ModuleNotFoundError: No module named 'playwright'` → 降级为浏览器兜底（`references/wechat-browser-fallback.md`） |
+| 微信公众号 Playwright 缺失 | 按 README 安装依赖；已有安装可用 `PLAYWRIGHT_PYTHONPATH` 指定包目录，不会自动安装 |
 | 路径不存在 | 自动创建目录，失败则标记 `status=error` |
 | 资源下载失败 | 继续保存 markdown，标记 `asset_count=0` |
 
@@ -157,7 +164,7 @@ python3 scripts/run_public_capture.py "<URL>"
 - 飞书机制、坑位与绕过：`references/feishu.md`
 - 腾讯会议回放说明：`references/tencent-meeting.md`
 - Hermes 环境集成（目录双轨制、Token 加载、路径自适应）：`references/hermes-integration.md`
-- 微信公众号浏览器兜底抓取（playwright 缺失时的降级方案）：`references/wechat-browser-fallback.md`
+- 翻译配置与微信依赖安装：[README.md](README.md)
 - 分享与打包说明：`README-share.md`
 
 ## 测试验证
@@ -169,4 +176,4 @@ python3 scripts/run_public_capture.py "<URL>"
 
 ---
 
-**版本**: 1.2.0 | **更新**: 2026-06-23 | **维护者**: OpenClaw / Hermes portable
+**版本**: 1.2.0 | **更新**: 2026-09-13 | **维护者**: OpenClaw / Hermes portable

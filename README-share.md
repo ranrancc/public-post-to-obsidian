@@ -27,7 +27,7 @@ Optional but recommended:
 
 - `defuddle`
 - `OPENAI_API_KEY` for title cleanup fallback
-- `kimi` for translation flow in non-Chinese captures
+- A translation API key (`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY`) and a matching `TRANSLATION_MODEL=provider:model`; see [README](README.md) for setup.
 
 ## Portable Environment Configuration
 
@@ -62,7 +62,7 @@ This skill includes a vendored copy of:
 
 - `baoyu-url-to-markdown`
 - its local `vendor/baoyu-chrome-cdp`
-- its installed `node_modules`
+- dependency manifests and a Bun lockfile (installed `node_modules` are not committed)
 
 Vendored source reference:
 
@@ -121,7 +121,14 @@ If you share this skill folder with others, keep these paths together:
 - `vendor/baoyu-url-to-markdown/`
 - `.env.example`
 
-Do not remove the vendored `node_modules` unless you also want recipients to run dependency installation themselves.
+Install the vendored dependencies before browser capture:
+
+```bash
+cd vendor/baoyu-url-to-markdown/scripts
+bun install
+```
+
+Use `npx -y bun install` if Bun is not installed but Node.js/npm is available.
 
 ## Current Generic-Web Behavior
 
@@ -142,4 +149,4 @@ The final note writing policy still belongs to this skill:
 
 ## Known Tradeoff
 
-This self-contained version is easier to share, but larger in size because the vendored JS runtime dependencies are included.
+Browser capture source is vendored; runtime dependencies still need installation. No sibling skill checkout is required.

@@ -15,6 +15,7 @@
 
 这个面向小白用户的打包版，建议优先支持这些公开链接：
 
+- X / Twitter 公开帖子（详见 [X 抓取说明](references/x.md)）
 - 微信公众号文章
 - 飞书 / Lark 公开页面
 - 腾讯会议公开回放
@@ -57,7 +58,7 @@
 如果你会用 Git：
 
 ```bash
-git clone <YOUR-REPO-URL>
+git clone https://github.com/ranrancc/public-post-to-obsidian.git
 cd public-post-to-obsidian
 ```
 
@@ -88,6 +89,16 @@ bun --version
 ```
 
 如果你的电脑里没有 `google-chrome` 这个命令，也没关系，只要已经安装了 Chrome、Chromium 或 Edge，后续通常也能用。
+
+普通网页的浏览器抓取源码已放在 `vendor/`，仓库不包含 `node_modules`。首次使用前安装依赖：
+
+```bash
+cd vendor/baoyu-url-to-markdown/scripts
+bun install
+cd ../../..
+```
+
+没有 `bun` 命令但已安装 Node.js/npm 时，可将 `bun install` 替换为 `npx -y bun install`。
 
 ### 第 3 步：第一次运行会让你选择保存位置
 
@@ -207,12 +218,35 @@ python3 scripts/run_public_capture.py "https://meeting.tencent.com/cw/xxxxx"
 
 ### 1. 非中文内容自动翻译
 
-部分流程会尝试调用本地 `kimi` 命令做翻译。
+翻译通过 API 调用，支持 `deepseek`、`openrouter`、`openai` 三种 provider，不需要本地 `kimi` 命令。
 
-如果你没有这个环境，也没关系：
+在私有 `.env` 或进程环境中配置对应密钥：`DEEPSEEK_API_KEY`、`OPENROUTER_API_KEY` 或 `OPENAI_API_KEY`。模型使用 `provider:model` 格式；请填写你所用服务中可用的模型 ID。
 
-- 可以先使用 `--translation-choice original`
-- 先保证原文抓取成功
+```bash
+python3 scripts/run_public_capture.py \
+  --translation-choice both \
+  --translation-model "provider:model" \
+  "https://example.com/article"
+```
+
+上面的 `provider:model` 是占位符，运行前需替换。模型选择顺序是 `--translation-model`、`TRANSLATION_MODEL` 环境变量、代码默认值。普通网页翻译也遵循此设置。
+
+不需要翻译时使用 `--translation-choice original`。当 API 返回 `finish_reason=length`，程序会报翻译截断错误；当前不会自动对失败块再次切分重试。
+
+### 2. 微信抓取依赖
+
+微信抓取需要 Python Playwright 和它的 Chromium 浏览器。建议在虚拟环境中安装，并用同一个 Python 运行抓取：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install playwright
+python3 -m playwright install chromium
+```
+
+以上激活命令适用于 macOS/Linux；Windows 使用 `.venv\Scripts\activate`。
+
+如果运行环境已在其他目录安装 Playwright，可设置 `PLAYWRIGHT_PYTHONPATH`，指向包含 `playwright` 包的目录（通常为 `site-packages`）。该变量只补充 Python 包搜索路径，不会安装包或浏览器。
 
 ## 新手排错
 
@@ -251,24 +285,16 @@ python3 scripts/run_public_capture.py \
 python3 scripts/run_public_capture.py --dry-run "<URL>"
 ```
 
-## 给 GitHub 仓库维护者的建议
+## 最近更新（2026-09-13）
 
-如果你准备把这个项目分享给更多非技术用户，建议仓库首页再补：
+- 普通网页翻译使用用户配置的模型。
+- API 翻译被长度上限截断时明确报错。
+- 微信和网页标题中的弯引号转为「」和『』。
+- 飞书执行器使用 `.cjs` 入口，兼容 ESM 项目环境。
+- 微信提取脚本支持 `PLAYWRIGHT_PYTHONPATH`。
 
-- macOS 安装说明
-- Windows 安装说明
-- Obsidian 路径如何查找
-- 常见报错截图
+验证包括现有集成检查、smoke 检查及上述改动的专项验证；未覆盖各平台在线抓取实测。
 
 ## 当前状态
 
-这是一个偏实用型项目，优先目标是“能帮人把公开内容沉淀进 Obsidian”。
-
-如果你要做一个更适合大众用户的版本，推荐下一步继续补：
-
-- 图文安装教程
-- 一键环境检查脚本
-- 首次配置向导
-- 把 X 能力拆成进阶版，而不是默认版
-- Obsidian / 非 Obsidian 双模式保存
-- `.md` / `.txt` 格式切换
+已支持首次配置向导、Obsidian / 下载目录 / 自定义目录，以及 `.md` / `.txt` 输出。后续可补充图文安装教程和环境检查工具。
