@@ -6,7 +6,14 @@ import json
 import sys
 from pathlib import Path
 
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+except ModuleNotFoundError:
+    import os
+    extra_path = os.environ.get('PLAYWRIGHT_PYTHONPATH')
+    if extra_path and extra_path not in sys.path:
+        sys.path.insert(0, extra_path)
+    from playwright.async_api import async_playwright
 
 EXTRACT_JS = """
 (() => {

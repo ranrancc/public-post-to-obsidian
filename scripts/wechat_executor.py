@@ -84,6 +84,8 @@ LOCAL_MARKDOWN_IMAGE_RE = re.compile(r'!\[[^\]]*\]\((?:\./)?(?P<path>assets/[^)]
 
 def sanitize_title(text: str) -> str:
     text = re.sub(r'[\\/:*?"<>|]', '', text).strip()
+    text = text.replace('\u201c', '「').replace('\u201d', '」')
+    text = text.replace('\u2018', '『').replace('\u2019', '』')
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r'[。.\s]+$', '', text)
     return (text[:80] or '未命名').strip()

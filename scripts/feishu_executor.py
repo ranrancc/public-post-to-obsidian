@@ -18,7 +18,7 @@ from common import (
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-FEISHU_EXPORTER = str(SCRIPT_DIR / 'grab_feishu_public_doc.js')
+FEISHU_EXPORTER = str(SCRIPT_DIR / 'grab_feishu_public_doc.cjs')
 FEISHU_PROBER = str(SCRIPT_DIR / 'feishu_probe.py')
 
 AUTHOR_LINE_RE = re.compile(r'^原创\s+.+\d{4}年\d{1,2}月\d{1,2}日')

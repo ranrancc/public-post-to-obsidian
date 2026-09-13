@@ -67,6 +67,8 @@ def sanitize_title(text: str) -> str:
     text = re.sub(r'https?://\S+', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     text = re.sub(r'[\\/:*?"<>|]', '', text)
+    text = text.replace('\u201c', '「').replace('\u201d', '」')
+    text = text.replace('\u2018', '『').replace('\u2019', '』')
     return text.strip()
 
 
@@ -620,7 +622,7 @@ def main():
             f.write(md)
         translated_note_path = None
         if not is_simplified_chinese(detected_lang) and choice in {'translate', 'both'}:
-            translated = translate_markdown(base_markdown, model_label='kimi 2.5')
+            translated = translate_markdown(base_markdown)
             zh_title = translated['translated_title'] or f'中文译文 {title}'
             zh_basename = f"{date_str}--{sanitize_filename_title(zh_title)}__web"
             translated_note_path = note_path_for(target_dir, zh_basename, output['file_format'])

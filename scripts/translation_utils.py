@@ -172,6 +172,11 @@ def _api_chat(base_url: str, api_key: str, model: str, messages: list[dict]) -> 
 
     choice = data.get('choices', [{}])[0]
     content = choice.get('message', {}).get('content', '')
+    if choice.get('finish_reason') == 'length':
+        raise RuntimeError(
+            'Translation output truncated at max_tokens; '
+            'split the document into smaller chunks.'
+        )
     if not content:
         raise RuntimeError(f'Empty response from translation API: {json.dumps(data)[:300]}')
     return content
